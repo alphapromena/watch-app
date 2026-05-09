@@ -4,6 +4,7 @@ import com.watchapp.contracts.SensorCollector
 import com.watchapp.contracts.Streamer
 import com.watchapp.identity.DeviceIdGenerator
 import com.watchapp.settings.SettingsStore
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Manual DI: a flat holder for the process-wide singletons.
@@ -17,4 +18,10 @@ class Container(
     val settingsStore: SettingsStore,
     val collector: SensorCollector,
     val streamer: Streamer,
+    /**
+     * Wall-clock ms of the most recently forwarded SensorEvent (`null` until
+     * the first event). Written by HealthStreamService, observed by MainScreen
+     * to render "Last: Ns ago".
+     */
+    val lastEventAt: MutableStateFlow<Long?> = MutableStateFlow(null),
 )

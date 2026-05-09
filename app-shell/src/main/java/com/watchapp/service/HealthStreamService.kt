@@ -90,6 +90,7 @@ class HealthStreamService : Service() {
             c.collector.start(this)
                 .onEach {
                     lastEventElapsedMs = nowElapsedMs()
+                    c.lastEventAt.value = System.currentTimeMillis()
                     c.streamer.enqueue(it)
                 }
                 .collect()
