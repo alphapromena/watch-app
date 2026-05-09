@@ -289,3 +289,23 @@ constructor is still public so unit tests can inject a mocked
 because `App.kt` still imports them; once app-shell migrates to
 `create(...)`, they can be tightened to `internal` in a follow-up
 commit (a one-line change here, no surface impact).
+
+## 17. Pre-baking server host/port into the APK at build time
+
+For non-developer operators receiving the APK by sideload, the FCAF v2
+server host and port can be baked in via Gradle project properties:
+
+```
+./gradlew :app-shell:assembleDebug \
+    -PdefaultHost=gondola.proxy.rlwy.net \
+    -PdefaultPort=15769
+```
+
+These populate `BuildConfig.DEFAULT_HOST` / `BuildConfig.DEFAULT_PORT`,
+which `SettingsStore` reads as the initial values for the encrypted
+preferences. With no `-P` flags the build still produces an APK with
+empty host and port 5088 (unchanged from before this commit).
+
+Runtime override from the debug screen (long-press on MainScreen)
+still works on top of whatever was baked — pre-configuration is a
+convenience for first-launch UX, not a lock.

@@ -14,6 +14,20 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
+
+        // Optional pre-bake of the FCAF v2 server target. Override per-build
+        // with `-PdefaultHost=...` / `-PdefaultPort=...` (see INTEGRATION_NOTES
+        // §17). With no -P flags this produces an APK with the same defaults
+        // as before BuildConfig was introduced (empty host, port 5088), so
+        // the existing manual debug-screen flow still works.
+        buildConfigField(
+            "String", "DEFAULT_HOST",
+            "\"${project.findProperty("defaultHost") ?: ""}\"",
+        )
+        buildConfigField(
+            "int", "DEFAULT_PORT",
+            "${project.findProperty("defaultPort") ?: 5088}",
+        )
     }
 
     buildTypes {
@@ -33,6 +47,8 @@ android {
 
     buildFeatures {
         compose = true
+        // Required on AGP 8+ to generate BuildConfig (opt-in).
+        buildConfig = true
     }
 }
 

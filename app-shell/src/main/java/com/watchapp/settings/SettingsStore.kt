@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.watchapp.BuildConfig
 import com.watchapp.contracts.DeviceConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -66,11 +67,13 @@ class SettingsStore internal constructor(
         const val KEY_PORT = "serverPort"
 
         const val DEFAULT_ENABLED = false
-        // TBD — the user sets this from the debug screen (long-press on MainScreen).
-        // Empty string means "not configured"; the UI gates the streaming toggle on
-        // serverHost.isNotBlank() so we never try to connect to "".
-        const val DEFAULT_HOST = ""
-        const val DEFAULT_PORT = 5088
+        // Sourced from BuildConfig so a per-build `-PdefaultHost` / `-PdefaultPort`
+        // can pre-bake the server target into the APK (INTEGRATION_NOTES §17).
+        // `val`, not `const val`: BuildConfig fields are final static at build
+        // time, not JVM compile-time constants. Empty host means "not configured"
+        // and the UI gates the streaming toggle on serverHost.isNotBlank().
+        val DEFAULT_HOST: String = BuildConfig.DEFAULT_HOST
+        val DEFAULT_PORT: Int = BuildConfig.DEFAULT_PORT
 
         /** Production wiring: encrypted prefs backed by an Android keystore master key. */
         fun create(context: Context, imei: String): SettingsStore {
