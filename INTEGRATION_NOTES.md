@@ -189,10 +189,12 @@ dependency change stays inside my module. Promote to the catalog if
 
 ## 14. NoOpStreamer in app-shell until TcpStreamer lands
 
-`com.watchapp.di.NoOpStreamer` fills the `Streamer` slot in [Container]
+~~`com.watchapp.di.NoOpStreamer` fills the `Streamer` slot in [Container]
 so app-shell can install and the rest of the pipeline runs end-to-end
-on hardware. As soon as Stream 1's `tcp` commit (item #8 step 6) lands,
-the swap is a one-line change in `App.onCreate()`; the
-ConnectivityManager.NetworkCallback bridge for
-`onNetworkAvailable()` / `onNetworkLost()` (item #3) lands in the same
-commit.
+on hardware.~~
+
+**RESOLVED.** Stream 1's `tcp` commit (63ba633) landed; `App.onCreate()`
+now constructs `PendingFrameDatabase` + `FrameBuffer` + `TcpStreamer`
+and wires a `ConnectivityManager.NetworkCallback` that forwards
+`onAvailable` / `onLost` to the streamer (item #3). NoOpStreamer is
+deleted.
