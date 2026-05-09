@@ -1,11 +1,13 @@
 package com.watchapp.networking.tcp
 
+import android.content.Context
 import android.util.Log
 import com.watchapp.contracts.DeviceConfig
 import com.watchapp.contracts.SensorEvent
 import com.watchapp.contracts.Streamer
 import com.watchapp.contracts.StreamerState
 import com.watchapp.networking.buffer.FrameBuffer
+import com.watchapp.networking.buffer.PendingFrameDatabase
 import com.watchapp.networking.codec.FrameCodec
 import com.watchapp.networking.codec.ProtocolBuilder
 import kotlinx.coroutines.CoroutineDispatcher
@@ -289,13 +291,41 @@ class TcpStreamer @JvmOverloads constructor(
         }
     }
 
-    private companion object {
-        const val TAG: String = "TcpStreamer"
-        const val CONNECT_TIMEOUT_MS: Int = 10_000
+    companion object {
+        private const val TAG: String = "TcpStreamer"
+        private const val CONNECT_TIMEOUT_MS: Int = 10_000
 
-        fun defaultIoExecutor(): ExecutorService =
+        private fun defaultIoExecutor(): ExecutorService =
             Executors.newSingleThreadExecutor { r ->
                 Thread(r, "watch-app-streamer-io").apply { isDaemon = true }
             }
     }
+}
+
+/**
+ * Convenience factory for app-shell. Builds the Room database from
+ * `context.applicationContext`, wraps its DAO in [FrameBuffer], and returns
+ * a fully-wired [TcpStreamer]. Callers do not need `androidx.room.RoomDatabase`
+ * on their classpath — Room stays an internal implementation detail of
+ * `:core-networking`.
+ *
+ * Equivalent to:
+ * ```
+ * val db = PendingFrameDatabase.create(context.applicationContext)
+ * TcpStreamer(deviceConfigProvider, FrameBuffer(db.pendingFrameDao()))
+ * ```
+ *
+ * Direct construction via the primary constructor is still supported for
+ * tests that want to inject a mocked [FrameBuffer].
+ */
+fun TcpStreamer.Companion.create(
+    context: Context,
+    deviceConfigProvider: () -> DeviceConfig,
+): TcpStreamer {
+    val database = PendingFrameDatabase.create(context.applicationContext)
+    val buffer = FrameBuffer(dao = database.pendingFrameDao())
+    return TcpStreamer(
+        deviceConfig = deviceConfigProvider,
+        frameBuffer = buffer,
+    )
 }

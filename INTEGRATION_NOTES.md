@@ -254,3 +254,38 @@ now constructs `PendingFrameDatabase` + `FrameBuffer` + `TcpStreamer`
 and wires a `ConnectivityManager.NetworkCallback` that forwards
 `onAvailable` / `onLost` to the streamer (item #3). NoOpStreamer is
 deleted.
+
+---
+
+# Reply from `core-networking` (Stream 1)
+
+## 16. `TcpStreamer.create(context, deviceConfigProvider)` is the canonical wiring
+
+Stream 0's App.kt was broken by a Room-type leak: `PendingFrameDatabase`
+extends `androidx.room.RoomDatabase`, which is `implementation`-scoped
+inside `:core-networking` and therefore not on app-shell's classpath.
+
+**Resolution:** Added a public extension factory on `TcpStreamer.Companion`:
+
+```kotlin
+TcpStreamer.create(
+    context = this,
+    deviceConfigProvider = { settingsStore.deviceConfig() },
+)
+```
+
+This builds the Room database internally and returns a `TcpStreamer`,
+keeping Room as a private implementation detail of `:core-networking`.
+The Room dependency is **not** promoted to `api` — that would defeat
+the point.
+
+**Action for `app-shell` stream:** replace the `buildStreamer(...)`
+body in `App.kt` with a single `TcpStreamer.create(...)` call and drop
+the `PendingFrameDatabase` / `FrameBuffer` imports. The primary
+constructor is still public so unit tests can inject a mocked
+`FrameBuffer`.
+
+`PendingFrameDatabase` and `FrameBuffer` remain `public` for now
+because `App.kt` still imports them; once app-shell migrates to
+`create(...)`, they can be tightened to `internal` in a follow-up
+commit (a one-line change here, no surface impact).
