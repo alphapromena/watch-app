@@ -18,10 +18,13 @@ import kotlinx.coroutines.flow.onStart
 /**
  * The single [SensorCollector] that app-shell consumes.
  *
- * Merges the four independent collector Flows (HR, location, SpO2, skin
+ * Merges the four underlying collector Flows (HR, location, SpO2, skin
  * temperature) into one [SensorEvent] stream. Each underlying collector
  * manages its own backing resources; this class only forwards events and
  * mirrors the running state.
+ *
+ * Note: [Spo2Collector] is a no-op in the current build (see its KDoc),
+ * so the merged stream effectively covers HR + location + temperature.
  */
 class CompositeCollector(
     private val collectors: List<SensorCollector>

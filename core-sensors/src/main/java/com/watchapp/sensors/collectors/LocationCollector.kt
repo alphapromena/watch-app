@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Streams GPS fixes via [LocationManager] using the raw `GPS_PROVIDER`.
@@ -59,23 +60,23 @@ class LocationCollector(
         _isRunning.value = true
         val startedAt = System.currentTimeMillis()
 
-        // Volatile across the watchdog coroutine and the listener callback.
-        // Both run on this Flow's collection scope; reads of a Long on a
-        // single coroutine context don't need a fence, but we mark the field
-        // so a future reader can't assume safety on a different scheduler.
-        @Volatile var lastFixAt: Long = 0L
-        @Volatile var lastNoFixEmittedAt: Long = 0L
+        // Shared between the LocationListener (fires on the main looper) and
+        // the watchdog coroutine (fires on the Flow's dispatcher). AtomicLong
+        // gives us a torn-write-free Long across both threads.
+        val lastFixAt = AtomicLong(0L)
+        val lastNoFixEmittedAt = AtomicLong(0L)
 
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
-                lastFixAt = System.currentTimeMillis()
+                val now = System.currentTimeMillis()
+                lastFixAt.set(now)
                 trySend(
                     SensorEvent.Location(
                         latitude = location.latitude,
                         longitude = location.longitude,
                         accuracyMeters = if (location.hasAccuracy()) location.accuracy else null,
                         speedMps = if (location.hasSpeed()) location.speed else null,
-                        timestampMs = lastFixAt
+                        timestampMs = now
                     )
                 )
             }
@@ -111,14 +112,16 @@ class LocationCollector(
             while (isActive) {
                 delay(WATCHDOG_TICK_MS)
                 val now = System.currentTimeMillis()
-                val sinceLastFix = if (lastFixAt == 0L) now - startedAt else now - lastFixAt
+                val lastFix = lastFixAt.get()
+                val sinceLastFix = if (lastFix == 0L) now - startedAt else now - lastFix
                 if (sinceLastFix < noFixWarningDelayMs) continue
 
-                val firstEmit = lastNoFixEmittedAt == 0L
-                val sinceEmit = now - lastNoFixEmittedAt
+                val lastEmit = lastNoFixEmittedAt.get()
+                val firstEmit = lastEmit == 0L
+                val sinceEmit = now - lastEmit
                 if (firstEmit || sinceEmit >= noFixRepeatPeriodMs) {
                     trySend(SensorEvent.NoGpsFix(timestampMs = now))
-                    lastNoFixEmittedAt = now
+                    lastNoFixEmittedAt.set(now)
                 }
             }
         }

@@ -1,67 +1,90 @@
 package com.watchapp.sensors.collectors
 
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.util.Log
-import androidx.health.services.client.data.DataType
 import com.watchapp.contracts.SensorCollector
 import com.watchapp.contracts.SensorEvent
-import com.watchapp.sensors.HealthServicesAdapter
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.callbackFlow
+import android.hardware.SensorEvent as AndroidSensorEvent
 
 /**
- * Emits skin temperature readings sourced from the shared
- * [androidx.health.services.client.ExerciseClient] update stream,
+ * Emits skin / ambient temperature readings via the Android [SensorManager],
  * down-sampled to one [SensorEvent.BodyTemperature] every [intervalMs].
  *
- * Skin temperature is delivered as exercise samples on devices that
- * support it; this collector piggy-backs on the WALKING session that
- * [HeartRateCollector] keeps alive via [HealthServicesAdapter].
+ * `androidx.health:health-services-client:1.1.0-alpha04` does not expose a
+ * `DataType.SKIN_TEMPERATURE` symbol, so the original Health-Services-backed
+ * design is unreachable. We fall back to [Sensor.TYPE_AMBIENT_TEMPERATURE],
+ * which on Galaxy Watch reads the wrist-side body temperature sensor that
+ * Samsung surfaces under the ambient-temperature type.
  *
- * If the device does not list `SKIN_TEMPERATURE` among supported exercise
- * data types, the collector logs once and completes its Flow immediately.
+ * If the device has no ambient-temperature sensor at runtime, the collector
+ * logs once and completes its Flow immediately — same pattern as the
+ * unsupported-device path elsewhere in this module.
  */
 class TemperatureCollector(
-    private val adapter: HealthServicesAdapter,
+    private val context: Context,
     private val intervalMs: Long = 60_000L
 ) : SensorCollector {
 
     private val _isRunning = MutableStateFlow(false)
     override val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
 
-    override fun start(scope: CoroutineScope): Flow<SensorEvent> = flow {
-        adapter.acquireExercise()
-        try {
-            val supported = adapter.supportedExerciseDataTypes()
-                .contains(DataType.SKIN_TEMPERATURE)
-            if (!supported) {
-                Log.i(TAG, "SKIN_TEMPERATURE unsupported on this device; collector is a no-op")
-                return@flow
-            }
-            _isRunning.value = true
+    override fun start(scope: CoroutineScope): Flow<SensorEvent> = callbackFlow {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val ambient = sensorManager?.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE)
+        if (sensorManager == null || ambient == null) {
+            Log.i(
+                TAG,
+                "TYPE_AMBIENT_TEMPERATURE unavailable on this device; collector is a no-op"
+            )
+            close()
+            return@callbackFlow
+        }
 
-            var lastEmittedAt = 0L
-            adapter.exerciseUpdates.collect { update ->
-                val sample = update.latestMetrics
-                    .getData(DataType.SKIN_TEMPERATURE)
-                    .lastOrNull() ?: return@collect
+        _isRunning.value = true
+        var lastEmittedAt = 0L
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: AndroidSensorEvent) {
                 val now = System.currentTimeMillis()
-                if (now - lastEmittedAt < intervalMs) return@collect
-
-                emit(
+                if (now - lastEmittedAt < intervalMs) return
+                val celsius = event.values?.firstOrNull()?.toDouble() ?: return
+                trySend(
                     SensorEvent.BodyTemperature(
-                        celsius = sample.value,
+                        celsius = celsius,
                         timestampMs = now
                     )
                 )
                 lastEmittedAt = now
             }
-        } finally {
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+        }
+
+        // SENSOR_DELAY_NORMAL ≈ 200 ms cadence — the listener throttles to
+        // intervalMs internally, so we don't need a faster delivery rate.
+        val registered = sensorManager.registerListener(
+            listener,
+            ambient,
+            SensorManager.SENSOR_DELAY_NORMAL
+        )
+        if (!registered) {
+            Log.w(TAG, "registerListener returned false; collector is a no-op")
+            close()
+            return@callbackFlow
+        }
+
+        awaitClose {
+            sensorManager.unregisterListener(listener)
             _isRunning.value = false
-            adapter.releaseExercise()
         }
     }
 
