@@ -116,7 +116,7 @@ Either stream (or you, the user) can do this once.
 
 | Permission | Why core-sensors needs it |
 |---|---|
-| `android.permission.BODY_SENSORS` | HR / SpO2 / skin temp via Health Services |
+| `android.permission.BODY_SENSORS` | HR via Health Services `ExerciseClient` |
 | `android.permission.BODY_SENSORS_BACKGROUND` | Continuous HR with screen off (Wear OS 4 / API 33+) |
 | `android.permission.ACCESS_FINE_LOCATION` | `LocationManager.GPS_PROVIDER` |
 | `android.permission.ACCESS_BACKGROUND_LOCATION` | GPS while service is foreground but UI is not visible |
@@ -125,6 +125,11 @@ Either stream (or you, the user) can do this once.
 Plus `<uses-feature android:name="android.hardware.location.gps" android:required="false" />`
 so the watch model gates correctly without making the app uninstallable on
 non-GPS Wear devices.
+
+`TemperatureCollector` reads `Sensor.TYPE_AMBIENT_TEMPERATURE` via the
+Android `SensorManager` (see item #15) — that sensor type does not require
+any additional runtime permission. `Spo2Collector` is a no-op in the
+current build (item #15) and consumes no permission either.
 
 The foreground-service type (`health|location`) is on app-shell per the brief.
 `core-sensors` does not start a service, hold wake locks, or open sockets.
@@ -140,28 +145,79 @@ dependency change stays inside my module. Promote to the catalog if
 
 ## 12. Open coordination questions for app-shell
 
-1. **SpO2 pause/resume of exercise.** `Spo2Collector` calls `pauseExercise()`
-   / `resumeExercise()` around each `MeasureClient` spot read, per the brief
-   ("temporarily pause exercise data flow if Health Services requires it").
-   On Galaxy Watch Ultra this is likely unnecessary and costs a brief HR
-   gap every 60 s. If you can confirm concurrent measurement is supported,
-   I'll flip a flag in `HealthServicesAdapter` to skip the pause.
+1. ~~**SpO2 pause/resume of exercise.**~~ Obsolete after item #15 — SpO2 is
+   now a no-op so there is no `MeasureClient` call to bracket with pause
+   / resume. The `pauseExercise()` / `resumeExercise()` helpers were
+   removed from `HealthServicesAdapter` in the same change.
 2. **Wall-clock timestamps.** Collectors stamp every event with
    `System.currentTimeMillis()` at emit time, not by converting Health
    Services' `timeDurationFromBoot` to wall-clock. Skew is sub-second,
    well within FCAF v2's second-resolution `ts`. Flag if higher fidelity
-   is needed.
+   is needed. (Stream 0 accepted in item #13.)
 3. **Permission denial mid-session.** Collectors that hit a
    `SecurityException` or a pre-flight `checkSelfPermission` failure log
    once and complete their Flow silently — they do not retry or surface
    a typed error. I assume your permission flow guarantees grants before
    construction; if a user revokes mid-session, collectors will go quiet.
-4. **`MeasureClient` foreground requirement.** SpO2 spot reads assume
-   the foreground service is alive. If suspended, Health Services will
-   reject the measurement; `Spo2Collector` logs and skips that cycle.
+   (Stream 0 accepted in item #13.)
+4. ~~**`MeasureClient` foreground requirement.**~~ Obsolete after item #15.
 5. **Foreground-service type.** Wear OS 4 (API 33+) requires
    `dataSync|health|location` on the service tag for the combination of
-   live HR + GPS streaming. App-shell owns this declaration.
+   live HR + GPS streaming. App-shell owns this declaration. (Stream 0
+   accepted `health|location` in item #13.)
+
+## 15. SpO2 + skin temperature: Health Services 1.1.0-alpha04 doesn't expose them
+
+Verified against the published `androidx.health:health-services-client:1.1.0-alpha04`
+sources jar in the local Gradle cache: the public `DataType` companion object
+contains only `HEART_RATE_BPM` and `HEART_RATE_BPM_STATS` (plus activity-style
+types like `STEPS`, `LOCATION`, `SPEED`, `DISTANCE`, etc.). There is **no**
+`DataType.SPO2` and **no** `DataType.SKIN_TEMPERATURE` on either the
+`ExerciseClient` or the `MeasureClient` surface in this version.
+
+Knock-on changes already landed in `:core-sensors`:
+
+- **`HealthServicesAdapter`**: enables only `HEART_RATE_BPM` in
+  `ExerciseConfig.Builder.setDataTypes`. Removed the
+  `prepareExerciseAsync` / `WarmUpConfig` call — its public constructor
+  takes `Set<DeltaDataType<*, *>>` and Kotlin was resolving to the
+  internal protobuf-based constructor when given `Set<DataType<*, *>>`.
+  Also removed `pauseExercise`, `resumeExercise`, `measureClient`,
+  `isMeasureSupported`, and `supportedExerciseDataTypes` since they had
+  no remaining callers after the SpO2 / temperature changes below.
+- **`Spo2Collector`**: now a pure no-op. Logs once at first start and
+  completes its `Flow` immediately. Constructor takes no arguments.
+- **`TemperatureCollector`**: re-implemented on the Android `SensorManager`
+  using `Sensor.TYPE_AMBIENT_TEMPERATURE`, which on Galaxy Watch reads
+  the wrist-side body temperature sensor. Constructor now takes a
+  `Context`. Same down-sample to 60 s. If the sensor is missing, logs
+  once and the Flow completes — same shape as the rest of the module.
+- **`CompositeCollector`**'s convenience constructor still takes one
+  instance of each collector, so the wiring in `Container` only needs to
+  swap the constructor arguments.
+
+### Action required in `app-shell/src/main/java/com/watchapp/App.kt`
+
+The two collector constructors changed shape. Stream 0 must update
+`App.kt` (or wherever `CompositeCollector` is wired) like so:
+
+```kotlin
+// Before
+spo2 = Spo2Collector(adapter),
+temperature = TemperatureCollector(adapter),
+
+// After
+spo2 = Spo2Collector(),
+temperature = TemperatureCollector(applicationContext),
+```
+
+`Spo2Collector` no longer takes any constructor arguments because it
+no longer touches Health Services. `TemperatureCollector` takes the
+application `Context` it needs to obtain `SensorManager`.
+
+If a future bump of the Health Services library, or a Samsung-specific
+SDK, adds SpO2 or skin temperature, replace the no-op `Spo2Collector`
+and the SensorManager-based `TemperatureCollector` accordingly.
 
 ---
 
