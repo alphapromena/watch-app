@@ -26,7 +26,7 @@ android {
 dependencies {
     // Cross-module type contracts (SensorEvent / SensorCollector). Re-exported
     // so app-shell sees the same symbols when it consumes :core-sensors.
-    api(project(":app-shell:contracts"))
+    api(project(":contracts"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)

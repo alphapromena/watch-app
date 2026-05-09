@@ -23,6 +23,6 @@ dependencyResolutionManagement {
 rootProject.name = "watch-app"
 
 include(":app-shell")
-include(":app-shell:contracts")
+include(":contracts")
 include(":core-networking")
 include(":core-sensors")

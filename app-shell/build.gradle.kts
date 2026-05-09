@@ -37,7 +37,7 @@ android {
 }
 
 dependencies {
-    implementation(project(":app-shell:contracts"))
+    implementation(project(":contracts"))
     implementation(project(":core-networking"))
     implementation(project(":core-sensors"))
 
