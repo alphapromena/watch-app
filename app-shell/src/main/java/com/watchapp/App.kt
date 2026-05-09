@@ -10,9 +10,8 @@ import androidx.core.content.getSystemService
 import com.watchapp.contracts.SensorCollector
 import com.watchapp.di.Container
 import com.watchapp.identity.DeviceIdGenerator
-import com.watchapp.networking.buffer.FrameBuffer
-import com.watchapp.networking.buffer.PendingFrameDatabase
 import com.watchapp.networking.tcp.TcpStreamer
+import com.watchapp.networking.tcp.create
 import com.watchapp.sensors.CompositeCollector
 import com.watchapp.sensors.HealthServicesAdapter
 import com.watchapp.sensors.collectors.HeartRateCollector
@@ -57,22 +56,17 @@ class App : Application() {
         return CompositeCollector(
             heartRate = HeartRateCollector(adapter),
             location = LocationCollector(this),
-            spo2 = Spo2Collector(adapter),
-            temperature = TemperatureCollector(adapter),
+            spo2 = Spo2Collector(),
+            temperature = TemperatureCollector(applicationContext),
         )
     }
 
-    private fun buildStreamer(settingsStore: SettingsStore): TcpStreamer {
-        val db = PendingFrameDatabase.create(this)
-        val buffer = FrameBuffer(dao = db.pendingFrameDao())
+    private fun buildStreamer(settingsStore: SettingsStore): TcpStreamer =
         // Provider, not a snapshot — the user can re-point host/port from the
         // debug screen and the next reconnect picks up the new config
-        // (INTEGRATION_NOTES item #2).
-        return TcpStreamer(
-            deviceConfig = { settingsStore.deviceConfig() },
-            frameBuffer = buffer,
-        )
-    }
+        // (INTEGRATION_NOTES item #2). The factory hides Room from app-shell
+        // (INTEGRATION_NOTES item #16).
+        TcpStreamer.create(this, settingsStore::deviceConfig)
 
     private fun registerNetworkCallback(streamer: TcpStreamer) {
         val cm = getSystemService<ConnectivityManager>() ?: return

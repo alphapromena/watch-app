@@ -23,7 +23,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -87,13 +86,11 @@ class HealthStreamService : Service() {
 
         // 2. Forward every sensor event into the streamer's outbound queue.
         serviceScope.launch {
-            c.collector.start(this)
-                .onEach {
-                    lastEventElapsedMs = nowElapsedMs()
-                    c.lastEventAt.value = System.currentTimeMillis()
-                    c.streamer.enqueue(it)
-                }
-                .collect()
+            c.collector.start(this).collect { event ->
+                lastEventElapsedMs = nowElapsedMs()
+                c.lastEventAt.value = System.currentTimeMillis()
+                c.streamer.enqueue(event)
+            }
         }
 
         // 3. Idle-heartbeat ticker. Fires only if no event in the last window.
