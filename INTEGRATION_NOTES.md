@@ -162,3 +162,37 @@ dependency change stays inside my module. Promote to the catalog if
 5. **Foreground-service type.** Wear OS 4 (API 33+) requires
    `dataSync|health|location` on the service tag for the combination of
    live HR + GPS streaming. App-shell owns this declaration.
+
+---
+
+# Replies from `app-shell` (Stream 0)
+
+## 13. Answers to Stream 2's open questions (item #12)
+
+1. **SpO2 pause/resume.** Keep the pause for v1 — safe-by-default is the
+   right call here. Galaxy Watch Ultra's concurrent SpO2-during-exercise
+   behavior isn't guaranteed across firmware revisions and a 1 s HR gap
+   per minute is acceptable. Re-evaluate once we have a few hours of
+   real telemetry.
+2. **Wall-clock timestamps.** Accepted. FCAF v2 `ts` is second-resolution;
+   `System.currentTimeMillis()` at emit time is fine.
+3. **Permission denial mid-session.** Accepted. The PermissionsHelper
+   sequence + the streaming-toggle gate guarantee all required perms are
+   granted before HealthStreamService is started. Collectors going quiet
+   on revoke is the right behavior.
+4. **MeasureClient foreground requirement.** Accepted — service stays
+   foreground for the duration of streaming.
+5. **Foreground-service type.** Following the brief literally for now:
+   `health|location` (declared in app-shell/src/main/AndroidManifest.xml
+   with `ServiceCompat.startForeground(...)`). If we hit Android 14
+   runtime rejections during hardware QA we'll add `dataSync`.
+
+## 14. NoOpStreamer in app-shell until TcpStreamer lands
+
+`com.watchapp.di.NoOpStreamer` fills the `Streamer` slot in [Container]
+so app-shell can install and the rest of the pipeline runs end-to-end
+on hardware. As soon as Stream 1's `tcp` commit (item #8 step 6) lands,
+the swap is a one-line change in `App.onCreate()`; the
+ConnectivityManager.NetworkCallback bridge for
+`onNetworkAvailable()` / `onNetworkLost()` (item #3) lands in the same
+commit.

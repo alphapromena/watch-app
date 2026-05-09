@@ -2,6 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-feature android:name="android.hardware.type.watch" />
+    <!-- Per INTEGRATION_NOTES item #10: keep the app installable on Wear
+         devices without GPS hardware (the watch model gates the location
+         collector at runtime). -->
+    <uses-feature
+        android:name="android.hardware.location.gps"
+        android:required="false" />
 
     <!-- Networking -->
     <uses-permission android:name="android.permission.INTERNET" />
