@@ -1,6 +1,6 @@
 // :core-networking — TCP transport, FCAF v2 framing, reconnect/backoff,
 // Room-backed offline buffer. Owned by Stream 1. Depends on
-// :app-shell:contracts for SensorEvent / Streamer / DeviceConfig.
+// :contracts for SensorEvent / Streamer / DeviceConfig.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -33,7 +33,7 @@ android {
 }
 
 dependencies {
-    api(project(":app-shell:contracts"))
+    api(project(":contracts"))
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
